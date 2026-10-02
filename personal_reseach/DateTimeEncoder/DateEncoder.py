@@ -4,11 +4,28 @@ from sklearn.base import BaseEstimator, TransformerMixin
 
 class DateEncoder(BaseEstimator, TransformerMixin):
 
-    def __init__(self, drop_original=True):
+    ALLOWED_FEATURES = {"month", "year", "day", "dayofweek"}
+
+    def __init__(self, features=None, drop_original=True):
+        self.features = features
         self.drop_original = drop_original
 
     def fit(self, X, y=None):
         return self
+
+    def _get_selected_features(self):
+        """Validates and returns the list of feature names to extract."""
+        if self.features is None:
+            return ["month", "year", "day", "dayofweek"]
+
+        # Validate provided features
+        invalid = set(self.features) - self.ALLOWED_FEATURES
+        if invalid:
+            raise ValueError(
+                f"Invalid feature(s) {invalid}. Allowed options: {self.ALLOWED_FEATURES}"
+            )
+
+        return list(self.features)
 
     def transform(self, X):
         if isinstance(X, pd.DataFrame):
@@ -16,16 +33,15 @@ class DateEncoder(BaseEstimator, TransformerMixin):
         else:
             df_in = pd.DataFrame(X)
 
+        selected_features = self._get_selected_features()
         extracted_features = []
+
         for col in df_in.columns:
             dt = pd.to_datetime(df_in[col], format="mixed", dayfirst=True)
 
-            month = dt.dt.month.to_frame(name=f"{col}_month")
-            year = dt.dt.year.to_frame(name=f"{col}_year")
-            day = dt.dt.day.to_frame(name=f"{col}_day")
-            dayofweek = dt.dt.dayofweek.to_frame(name=f"{col}_dayofweek")
-
-            extracted_features.extend([month, year, day, dayofweek])
+            for feat in selected_features:
+                feature_series = getattr(dt.dt, feat).to_frame(name=f"{col}_{feat}")
+                extracted_features.append(feature_series)
 
         return pd.concat(extracted_features, axis=1)
 
@@ -34,9 +50,11 @@ class DateEncoder(BaseEstimator, TransformerMixin):
         if input_features is None:
             return None
 
+        selected_features = self._get_selected_features()
         feature_names = []
+
         for col in input_features:
-            feature_names.extend(
-                [f"{col}_month", f"{col}_year", f"{col}_day", f"{col}_dayofweek"]
-            )
-        return list(feature_names)
+            for feat in selected_features:
+                feature_names.append(f"{col}_{feat}")
+
+        return feature_names
